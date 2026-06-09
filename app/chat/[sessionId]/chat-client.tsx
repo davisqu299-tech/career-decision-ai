@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { AppShell } from "@/components/layout/app-shell";
 import { ChatArea } from "@/components/chat/chat-area";
 import { ChatInput } from "@/components/chat/chat-input";
+import { WorkspaceLayout } from "@/components/layout/workspace-layout";
 import { useChatSession } from "@/lib/chat/use-chat-session";
+import {
+  CHAT_LEAVE_CONFIRM_MESSAGE,
+  usePageLeaveGuard,
+} from "@/lib/hooks/use-leave-guard";
 import { Button } from "@/components/ui/button";
 
 interface ChatClientProps {
@@ -13,9 +17,14 @@ interface ChatClientProps {
 }
 
 export function ChatClient({ sessionId, autoSendInitial }: ChatClientProps) {
-  const { session, sessions, isLoading, sendMessage } = useChatSession({
+  const { session, isLoading, sendMessage } = useChatSession({
     sessionId,
     autoSendInitial,
+  });
+
+  usePageLeaveGuard({
+    enabled: session?.status === "active",
+    confirmMessage: CHAT_LEAVE_CONFIRM_MESSAGE,
   });
 
   if (!session) {
@@ -41,11 +50,11 @@ export function ChatClient({ sessionId, autoSendInitial }: ChatClientProps) {
   }
 
   return (
-    <AppShell sessions={sessions} currentSessionId={sessionId}>
+    <WorkspaceLayout comparison={session.decisionComparison}>
       <div className="flex flex-1 flex-col overflow-hidden">
         <ChatArea messages={session.messages} isLoading={isLoading} />
         <ChatInput onSend={sendMessage} disabled={isLoading} />
       </div>
-    </AppShell>
+    </WorkspaceLayout>
   );
 }

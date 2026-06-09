@@ -2,9 +2,15 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ReportLayout } from "@/components/report/report-layout";
+import { SaveReportButton } from "@/components/report/save-report-button";
 import { reportModules } from "@/lib/report/module-registry";
 import { getSession } from "@/lib/chat/session-store";
+import {
+  confirmLeave,
+  useBeforeUnloadGuard,
+} from "@/lib/hooks/use-leave-guard";
 import type { Session } from "@/types/chat";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,11 +20,21 @@ interface ReportClientProps {
 }
 
 export function ReportClient({ sessionId }: ReportClientProps) {
+  const router = useRouter();
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+
+  const hasReport = Boolean(session?.decisionSummary);
+  useBeforeUnloadGuard(hasReport);
 
   useEffect(() => {
     setSession(getSession(sessionId));
   }, [sessionId]);
+
+  const handleNewAnalysis = () => {
+    if (confirmLeave()) {
+      router.push("/");
+    }
+  };
 
   if (session === undefined) {
     return (
@@ -44,14 +60,23 @@ export function ReportClient({ sessionId }: ReportClientProps) {
   const summary = session.decisionSummary;
 
   return (
-    <ReportLayout sessionTitle={session.title}>
+    <ReportLayout
+      sessionTitle={session.title}
+      comparison={session.decisionComparison}
+    >
       {reportModules.map((mod) => {
         const Component = mod.component;
         return <Component key={mod.id} summary={summary} />;
       })}
-      <div className="flex justify-center pt-4">
-        <Button variant="outline" asChild>
-          <Link href="/">开始新的分析</Link>
+      <div className="pt-2">
+        <SaveReportButton
+          comparison={session.decisionComparison}
+          summary={summary}
+        />
+      </div>
+      <div className="mt-10 flex justify-center border-t border-neutral-200 pt-8">
+        <Button variant="outline" onClick={handleNewAnalysis}>
+          开始新的分析
         </Button>
       </div>
     </ReportLayout>

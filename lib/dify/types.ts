@@ -8,6 +8,36 @@ export interface DifyWorkflowRunRequest {
   user: string;
 }
 
+export interface DifyChatMessageRequest {
+  inputs: Record<string, unknown>;
+  query: string;
+  response_mode: "blocking" | "streaming";
+  conversation_id?: string;
+  user: string;
+}
+
+export interface DifyChatBlockingResponse {
+  event: string;
+  task_id: string;
+  id: string;
+  message_id: string;
+  conversation_id: string;
+  mode: string;
+  answer: string;
+  metadata?: Record<string, unknown>;
+  created_at?: number;
+}
+
+export interface DifyChatStreamEvent {
+  event: string;
+  task_id?: string;
+  message_id?: string;
+  conversation_id?: string;
+  answer?: string;
+  message?: string;
+  status?: number;
+}
+
 export interface DifyWorkflowFinishedData {
   id: string;
   workflow_id: string;

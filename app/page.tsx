@@ -2,17 +2,25 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { HeroInput } from "@/components/home/hero-input";
+import { clearHomeDraft } from "@/lib/chat/draft-store";
 import { createSession } from "@/lib/chat/session-store";
 
 export default function HomePage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (message: string) => {
+  const handleSubmit = async (message: string) => {
     setIsSubmitting(true);
-    const session = createSession(message);
-    router.push(`/chat/${session.id}?initial=1`);
+    try {
+      clearHomeDraft();
+      const session = createSession(message);
+      await router.push(`/chat/${session.id}?initial=1`);
+    } catch {
+      setIsSubmitting(false);
+      toast.error("无法进入对话页，请重试");
+    }
   };
 
   return (

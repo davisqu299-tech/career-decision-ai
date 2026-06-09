@@ -1,3 +1,4 @@
+import type { DecisionComparison } from "@/types/decision-comparison";
 import type { DecisionSummary } from "@/types/decision";
 
 export type MessageRole = "user" | "assistant";
@@ -17,6 +18,8 @@ export interface Session {
   messages: Message[];
   status: SessionStatus;
   decisionSummary?: DecisionSummary;
+  decisionComparison?: DecisionComparison;
+  difyConversationId?: string;
   createdAt: number;
   updatedAt: number;
 }

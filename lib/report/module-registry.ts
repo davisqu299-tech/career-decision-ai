@@ -15,7 +15,7 @@ export interface ReportModuleConfig {
 export const reportModules: ReportModuleConfig[] = [
   {
     id: "conclusion",
-    title: "最终决策",
+    title: "最终建议",
     order: 1,
     component: ConclusionModule,
   },
@@ -27,13 +27,13 @@ export const reportModules: ReportModuleConfig[] = [
   },
   {
     id: "reasoning",
-    title: "核心逻辑",
+    title: "核心推荐原因",
     order: 3,
     component: ReasoningModule,
   },
   {
     id: "insights",
-    title: "深度洞察与行动建议",
+    title: "洞察与行动建议",
     order: 4,
     component: InsightsModule,
   },

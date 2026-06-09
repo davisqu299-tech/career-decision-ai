@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { runWorkflow } from "@/lib/dify/client";
+import { runDify } from "@/lib/dify/client";
 import { DifyClientError } from "@/lib/dify/types";
+
+export const maxDuration = 120;
 
 const chatRequestSchema = z.object({
   sessionId: z.string().min(1),
   message: z.string().min(1),
+  conversationId: z.string().optional(),
   history: z
     .array(
       z.object({
@@ -28,13 +31,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await runWorkflow({
+    const { response, conversationId } = await runDify({
       sessionId: parsed.data.sessionId,
       message: parsed.data.message,
       history: parsed.data.history,
+      conversationId: parsed.data.conversationId,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...response, conversationId });
   } catch (error) {
     if (error instanceof DifyClientError) {
       return NextResponse.json(

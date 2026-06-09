@@ -2,13 +2,13 @@ import type { DecisionSummary } from "@/types/decision";
 import { ReportModule } from "@/components/report/report-module";
 
 export function InsightsModule({ summary }: { summary: DecisionSummary }) {
-  const items = summary.insights_and_actions.deep_insight
+  const items = summary.insights_and_actions
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
 
   return (
-    <ReportModule title="深度洞察与行动建议">
+    <ReportModule title="洞察与行动建议">
       <ul className="space-y-3">
         {items.map((item, index) => (
           <li

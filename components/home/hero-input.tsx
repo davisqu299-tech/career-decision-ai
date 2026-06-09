@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { getHomeDraft, setHomeDraft } from "@/lib/chat/draft-store";
 
 interface HeroInputProps {
   onSubmit: (message: string) => void;
@@ -13,6 +14,23 @@ interface HeroInputProps {
 export function HeroInput({ onSubmit, disabled = false }: HeroInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setValue(getHomeDraft());
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const handleChange = (text: string) => {
+    setValue(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setHomeDraft(text), 300);
+  };
 
   const handleSubmit = () => {
     const trimmed = value.trim();
@@ -32,7 +50,7 @@ export function HeroInput({ onSubmit, disabled = false }: HeroInputProps) {
       <Textarea
         ref={textareaRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="描述你的工作情况以及当前的离职困惑"
         disabled={disabled}

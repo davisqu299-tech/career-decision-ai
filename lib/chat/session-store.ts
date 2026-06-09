@@ -1,111 +1,275 @@
 import type { DecisionSummary } from "@/types/decision";
+import type { DecisionComparison } from "@/types/decision-comparison";
 import type { Message, MessageRole, Session } from "@/types/chat";
 
-const STORAGE_KEY = "career-decision-ai:sessions";
+
+
+const STORAGE_KEY = "career-decision-ai:current-session";
+
+
 
 function isBrowser(): boolean {
+
   return typeof window !== "undefined";
+
 }
 
-function readAll(): Session[] {
-  if (!isBrowser()) return [];
+
+
+function readCurrent(): Session | null {
+
+  if (!isBrowser()) return null;
+
   try {
+
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as Session[];
+
+    if (!raw) return null;
+
+    return JSON.parse(raw) as Session;
+
   } catch {
-    return [];
+
+    return null;
+
   }
+
 }
 
-function writeAll(sessions: Session[]): void {
+
+
+function writeCurrent(session: Session | null): void {
+
   if (!isBrowser()) return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+
+  if (session) {
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+
+  } else {
+
+    localStorage.removeItem(STORAGE_KEY);
+
+  }
+
 }
+
+
 
 export function generateId(): string {
+
   if (isBrowser() && crypto.randomUUID) {
+
     return crypto.randomUUID();
+
   }
+
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 }
+
+
 
 export function createMessage(role: MessageRole, content: string): Message {
+
   return {
+
     id: generateId(),
+
     role,
+
     content,
+
     createdAt: Date.now(),
+
   };
+
 }
+
+
 
 export function createSession(firstMessage: string): Session {
+
   const message = createMessage("user", firstMessage);
+
   const title =
+
     firstMessage.length > 30
+
       ? `${firstMessage.slice(0, 30)}…`
+
       : firstMessage;
 
+
+
   const session: Session = {
+
     id: generateId(),
+
     title,
+
     messages: [message],
+
     status: "active",
+
     createdAt: Date.now(),
+
     updatedAt: Date.now(),
+
   };
 
-  const sessions = readAll();
-  sessions.unshift(session);
-  writeAll(sessions);
+
+
+  writeCurrent(session);
+
   return session;
+
 }
+
+
 
 export function getSession(id: string): Session | null {
-  return readAll().find((s) => s.id === id) ?? null;
+
+  const session = readCurrent();
+
+  if (!session || session.id !== id) return null;
+
+  return session;
+
 }
 
-export function listSessions(): Session[] {
-  return readAll().sort((a, b) => b.updatedAt - a.updatedAt);
-}
+
 
 export function appendMessage(
+
   sessionId: string,
+
   role: MessageRole,
+
   content: string
+
 ): Session | null {
-  const sessions = readAll();
-  const index = sessions.findIndex((s) => s.id === sessionId);
-  if (index === -1) return null;
+
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+
 
   const message = createMessage(role, content);
-  sessions[index] = {
-    ...sessions[index],
-    messages: [...sessions[index].messages, message],
+
+  const updated: Session = {
+
+    ...session,
+
+    messages: [...session.messages, message],
+
     updatedAt: Date.now(),
+
   };
-  writeAll(sessions);
-  return sessions[index];
+
+  writeCurrent(updated);
+
+  return updated;
+
 }
+
+
 
 export function completeSession(
+
   sessionId: string,
+
   decisionSummary: DecisionSummary
+
 ): Session | null {
-  const sessions = readAll();
-  const index = sessions.findIndex((s) => s.id === sessionId);
-  if (index === -1) return null;
 
-  sessions[index] = {
-    ...sessions[index],
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+
+
+  const updated: Session = {
+
+    ...session,
+
     status: "completed",
+
     decisionSummary,
+
     updatedAt: Date.now(),
+
   };
-  writeAll(sessions);
-  return sessions[index];
+
+  writeCurrent(updated);
+
+  return updated;
+
 }
 
-export function deleteSession(sessionId: string): void {
-  writeAll(readAll().filter((s) => s.id !== sessionId));
+
+
+export function setDifyConversationId(
+
+  sessionId: string,
+
+  conversationId: string
+
+): Session | null {
+
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+
+
+  const updated: Session = {
+
+    ...session,
+
+    difyConversationId: conversationId,
+
+    updatedAt: Date.now(),
+
+  };
+
+  writeCurrent(updated);
+
+  return updated;
+
 }
+
+
+
+export function setDecisionComparison(
+
+  sessionId: string,
+
+  comparison: DecisionComparison
+
+): Session | null {
+
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+
+
+  const updated: Session = {
+
+    ...session,
+
+    decisionComparison: comparison,
+
+    updatedAt: Date.now(),
+
+  };
+
+  writeCurrent(updated);
+
+  return updated;
+
+}
+
+
