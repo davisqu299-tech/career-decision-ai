@@ -36,6 +36,11 @@ export interface DifyChatStreamEvent {
   answer?: string;
   message?: string;
   status?: number;
+  data?: {
+    outputs?: Record<string, unknown> | string;
+    answer?: string;
+    text?: string;
+  };
 }
 
 export interface DifyWorkflowFinishedData {

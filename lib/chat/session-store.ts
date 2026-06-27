@@ -210,6 +210,60 @@ export function completeSession(
 
 
 
+export function setSessionGeneratingReport(sessionId: string): Session | null {
+
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+
+
+  const updated: Session = {
+
+    ...session,
+
+    status: "generating_report",
+
+    updatedAt: Date.now(),
+
+  };
+
+  writeCurrent(updated);
+
+  return updated;
+
+}
+
+
+
+export function setSessionActive(sessionId: string): Session | null {
+
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+  if (session.status === "active") return session;
+
+
+
+  const updated: Session = {
+
+    ...session,
+
+    status: "active",
+
+    updatedAt: Date.now(),
+
+  };
+
+  writeCurrent(updated);
+
+  return updated;
+
+}
+
+
+
 export function setDifyConversationId(
 
   sessionId: string,
@@ -261,6 +315,88 @@ export function setDecisionComparison(
     ...session,
 
     decisionComparison: comparison,
+
+    updatedAt: Date.now(),
+
+  };
+
+  writeCurrent(updated);
+
+  return updated;
+
+}
+
+
+
+function buildTitleFromMessage(content: string): string {
+
+  return content.length > 30 ? `${content.slice(0, 30)}…` : content;
+
+}
+
+
+
+export function getLastUserMessageId(messages: Message[]): string | null {
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+
+    if (messages[i].role === "user") {
+
+      return messages[i].id;
+
+    }
+
+  }
+
+  return null;
+
+}
+
+
+
+export function editLastUserMessage(
+
+  sessionId: string,
+
+  messageId: string,
+
+  newContent: string
+
+): Session | null {
+
+  const session = readCurrent();
+
+  if (!session || session.id !== sessionId) return null;
+
+
+
+  const lastUserId = getLastUserMessageId(session.messages);
+
+  if (!lastUserId || lastUserId !== messageId) return null;
+
+
+
+  const index = session.messages.findIndex((m) => m.id === messageId);
+
+  if (index === -1) return null;
+
+
+
+  const truncated = session.messages.slice(0, index + 1);
+
+  truncated[index] = { ...truncated[index], content: newContent };
+
+
+
+  const { difyConversationId: _, decisionComparison: __, ...rest } = session;
+
+  const updated: Session = {
+
+    ...rest,
+
+    messages: truncated,
+
+    title: index === 0 ? buildTitleFromMessage(newContent) : session.title,
 
     updatedAt: Date.now(),
 

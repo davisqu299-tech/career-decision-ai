@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,16 +13,21 @@ import type { DecisionSummary } from "@/types/decision";
 interface SaveReportButtonProps {
   comparison?: DecisionComparison | null;
   summary: DecisionSummary;
-  logoSrc?: string | null;
+  onDownloadSuccess?: () => void;
 }
 
 export function SaveReportButton({
   comparison,
   summary,
-  logoSrc = null,
+  onDownloadSuccess,
 }: SaveReportButtonProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState(() => new Date());
+  const logoSrc =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/lychee-logo.png`
+      : "/lychee-logo.png";
 
   const handleSave = async () => {
     const node = cardRef.current;
@@ -32,8 +38,27 @@ export function SaveReportButton({
 
     setIsExporting(true);
     try {
+      flushSync(() => {
+        setGeneratedAt(new Date());
+      });
+
+      await document.fonts.ready;
+      await Promise.all(
+        Array.from(node.querySelectorAll("img")).map(
+          (img) =>
+            new Promise<void>((resolve) => {
+              if (img.complete) {
+                resolve();
+                return;
+              }
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            })
+        )
+      );
       await exportReportImage(node);
       toast.success("决策报告已保存到本地");
+      onDownloadSuccess?.();
     } catch {
       toast.error("保存失败，请稍后重试");
     } finally {
@@ -51,6 +76,7 @@ export function SaveReportButton({
           ref={cardRef}
           comparison={comparison}
           summary={summary}
+          generatedAt={generatedAt}
           logoSrc={logoSrc}
         />
       </div>

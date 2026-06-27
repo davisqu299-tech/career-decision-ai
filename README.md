@@ -34,6 +34,8 @@ npm run dev
 | `DIFY_USER_PREFIX` | 用户标识前缀，默认 `career-ai` |
 | `DIFY_RESPONSE_MODE` | `streaming`（默认，推荐）或 `blocking`；Cloudflare 下 blocking 易 504 |
 | `DIFY_REQUEST_TIMEOUT_MS` | Dify 请求超时（毫秒），默认 `120000`；streaming 下为空闲超时 |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 飞书应用凭证（反馈写入多维表格） |
+| `FEISHU_BASE_ID` / `FEISHU_TABLE_ID` | 飞书多维表格 base_id 与 table_id |
 
 ## 用户流程
 

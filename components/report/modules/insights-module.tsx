@@ -13,7 +13,7 @@ export function InsightsModule({ summary }: { summary: DecisionSummary }) {
         {items.map((item, index) => (
           <li
             key={index}
-            className="flex gap-3 text-[15px] leading-relaxed text-neutral-700"
+            className="flex gap-3 text-lg leading-relaxed text-neutral-700"
           >
             <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-medium text-neutral-600">
               {index + 1}

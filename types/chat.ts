@@ -10,7 +10,7 @@ export interface Message {
   createdAt: number;
 }
 
-export type SessionStatus = "active" | "completed";
+export type SessionStatus = "active" | "generating_report" | "completed";
 
 export interface Session {
   id: string;

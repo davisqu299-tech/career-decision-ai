@@ -1,27 +1,59 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { clearChatDraft, getChatDraft, setChatDraft } from "@/lib/chat/draft-store";
 
 interface ChatInputProps {
+  sessionId: string;
   onSend: (message: string) => void;
   disabled?: boolean;
   placeholder?: string;
 }
 
 export function ChatInput({
+  sessionId,
   onSend,
   disabled = false,
   placeholder = "继续补充你的情况…",
 }: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setValue(getChatDraft(sessionId));
+  }, [sessionId]);
+
+  useEffect(() => {
+    const flushDraft = () => setChatDraft(sessionId, value);
+    window.addEventListener("beforeunload", flushDraft);
+    window.addEventListener("pagehide", flushDraft);
+    return () => {
+      window.removeEventListener("beforeunload", flushDraft);
+      window.removeEventListener("pagehide", flushDraft);
+    };
+  }, [sessionId, value]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const handleChange = (text: string) => {
+    setValue(text);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setChatDraft(sessionId, text), 300);
+  };
 
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    clearChatDraft(sessionId);
     onSend(trimmed);
     setValue("");
     textareaRef.current?.focus();
@@ -40,7 +72,7 @@ export function ChatInput({
         <Textarea
           ref={textareaRef}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}

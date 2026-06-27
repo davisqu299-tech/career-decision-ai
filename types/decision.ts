@@ -7,15 +7,31 @@ export interface DecisionSummary {
   core_truth: string;
 }
 
+export interface QuotaSnapshot {
+  remaining: number;
+  reset_time: string;
+}
+
+interface ChatApiResponseBase {
+  entire_analysis?: string;
+  analysis_completed?: boolean;
+  quota?: QuotaSnapshot;
+}
+
 export type ChatApiResponse =
-  | {
+  | ({
       type: "follow_up";
       strategy_id: string;
       question: string;
       decision_comparison?: DecisionComparison;
-    }
-  | {
-      type: "decision";
-      decision_summary: DecisionSummary;
+    } & ChatApiResponseBase)
+  | ({
+      type: "report_generating";
       decision_comparison?: DecisionComparison;
-    };
+    } & ChatApiResponseBase)
+  | ({
+      type: "decision";
+    } & DecisionSummary &
+      ChatApiResponseBase & {
+        decision_comparison?: DecisionComparison;
+      });

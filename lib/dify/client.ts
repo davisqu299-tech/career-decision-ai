@@ -1,8 +1,8 @@
 import type { ChatHistoryItem } from "@/types/chat";
 import type { ChatApiResponse } from "@/types/decision";
-import { buildMockResponse } from "@/lib/dify/mock";
-import { parseChatAnswer, parseWorkflowOutput } from "@/lib/dify/parser";
-import { parseDifySseStream } from "@/lib/dify/stream";
+import { buildMockResponse, buildMockStreamAnswer } from "@/lib/dify/mock";
+import { parseChatAnswer, parseWorkflowOutput, resolveChatflowResponse } from "@/lib/dify/parser";
+import { parseDifySseStream, type DifyAnswerUpdateHandler } from "@/lib/dify/stream";
 import {
   DifyClientError,
   type DifyChatBlockingResponse,
@@ -11,7 +11,7 @@ import {
   type DifyWorkflowRunRequest,
 } from "@/lib/dify/types";
 
-const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 600_000;
 
 function getRequestTimeoutMs(): number {
   const raw = process.env.DIFY_REQUEST_TIMEOUT_MS;
@@ -79,20 +79,76 @@ function getApiKey(): string {
   return apiKey;
 }
 
-function getUserId(sessionId: string): string {
+function getUserId(browserUuid: string): string {
   const userPrefix = process.env.DIFY_USER_PREFIX ?? "career-ai";
-  return `${userPrefix}-${sessionId}`;
+  return `${userPrefix}-${browserUuid}`;
 }
 
-function wrapFetchError(error: unknown): never {
+function wrapFetchError(error: unknown, abortedByUser = false): never {
   if (error instanceof DifyClientError) throw error;
   if (error instanceof Error && error.name === "AbortError") {
-    throw new DifyClientError("Dify 请求超时", 504);
+    throw new DifyClientError(
+      abortedByUser ? "请求已取消" : "Dify 请求超时",
+      abortedByUser ? 499 : 504
+    );
   }
   throw new DifyClientError(
     error instanceof Error ? error.message : "未知错误",
     502
   );
+}
+
+function mergeAbortSignals(
+  signals: (AbortSignal | undefined)[]
+): AbortSignal | undefined {
+  const active = signals.filter((s): s is AbortSignal => s !== undefined);
+  if (active.length === 0) return undefined;
+  if (active.length === 1) return active[0];
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any(active);
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  for (const signal of active) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+  return controller.signal;
+}
+
+async function stopChatMessage(
+  taskId: string,
+  browserUuid: string
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${getChatUrl()}/${taskId}/stop`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getApiKey()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ user: getUserId(browserUuid) }),
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      console.warn(
+        `[dify] stop task ${taskId} failed (${response.status}): ${text.slice(0, 200)}`
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `[dify] stop task ${taskId} error:`,
+      error instanceof Error ? error.message : error
+    );
+  }
 }
 
 async function postDify<T>(url: string, body: unknown): Promise<T> {
@@ -128,16 +184,50 @@ async function postDify<T>(url: string, body: unknown): Promise<T> {
 
 async function postDifyStream(
   url: string,
-  body: DifyChatMessageRequest
-): Promise<{ answer: string; conversationId: string }> {
-  const controller = new AbortController();
+  body: DifyChatMessageRequest,
+  options?: {
+    signal?: AbortSignal;
+    sessionId?: string;
+    browserUuid: string;
+    onPartialAnswer?: DifyAnswerUpdateHandler;
+  }
+): Promise<{
+  answer: string;
+  conversationId: string;
+  lastSeenQuestion?: string;
+  lastSeenDecision?: Extract<ChatApiResponse, { type: "decision" }>;
+}> {
+  const timeoutController = new AbortController();
   let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let taskId: string | undefined;
+  let abortedByExternal = false;
+
+  const externalSignal = options?.signal;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      abortedByExternal = true;
+    } else {
+      externalSignal.addEventListener(
+        "abort",
+        () => {
+          abortedByExternal = true;
+          timeoutController.abort();
+        },
+        { once: true }
+      );
+    }
+  }
+
+  const signal = mergeAbortSignals([
+    timeoutController.signal,
+    externalSignal,
+  ]);
 
   const resetIdleTimer = () => {
     if (idleTimer) {
       clearTimeout(idleTimer);
     }
-    idleTimer = setTimeout(() => controller.abort(), getRequestTimeoutMs());
+    idleTimer = setTimeout(() => timeoutController.abort(), getRequestTimeoutMs());
   };
 
   try {
@@ -150,7 +240,7 @@ async function postDifyStream(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ ...body, response_mode: "streaming" }),
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok) {
@@ -163,14 +253,27 @@ async function postDifyStream(
 
     const result = await parseDifySseStream(response, {
       onActivity: resetIdleTimer,
+      onTaskId: (id) => {
+        taskId = id;
+      },
+      onAnswerUpdate: options?.onPartialAnswer,
     });
 
     return {
       answer: result.answer,
       conversationId: result.conversationId,
+      lastSeenQuestion: result.lastSeenQuestion,
+      lastSeenDecision: result.lastSeenDecision,
     };
   } catch (error) {
-    throw wrapFetchError(error);
+    if (
+      abortedByExternal &&
+      taskId &&
+      options?.browserUuid
+    ) {
+      void stopChatMessage(taskId, options.browserUuid);
+    }
+    throw wrapFetchError(error, abortedByExternal);
   } finally {
     if (idleTimer) {
       clearTimeout(idleTimer);
@@ -183,11 +286,109 @@ export interface RunChatflowResult {
   conversationId: string;
 }
 
-export async function runChatflow(params: {
+export interface RunDifyStreamCallbacks {
+  onPartialAnswer?: DifyAnswerUpdateHandler;
+}
+
+export async function runDifyWithStream(params: {
   sessionId: string;
+  browserUuid: string;
   message: string;
   conversationId?: string;
   history?: ChatHistoryItem[];
+  signal?: AbortSignal;
+} & RunDifyStreamCallbacks): Promise<RunChatflowResult> {
+  if (useMockMode()) {
+    return runMockWithStream(params);
+  }
+
+  const mode = process.env.DIFY_APP_MODE ?? "chatflow";
+  if (mode === "workflow") {
+    const result = await runWorkflow(params);
+    params.onPartialAnswer?.(JSON.stringify(result.response), JSON.stringify(result.response));
+    return result;
+  }
+
+  const body: DifyChatMessageRequest = {
+    inputs: {},
+    query: params.message,
+    response_mode: getResponseMode(),
+    user: getUserId(params.browserUuid),
+  };
+
+  if (params.conversationId) {
+    body.conversation_id = params.conversationId;
+  }
+
+  if (getResponseMode() === "streaming") {
+    const streamed = await postDifyStream(getChatUrl(), body, {
+      signal: params.signal,
+      sessionId: params.sessionId,
+      browserUuid: params.browserUuid,
+      onPartialAnswer: params.onPartialAnswer,
+    });
+
+    if (!streamed.answer.trim()) {
+      throw new DifyClientError("Chatflow 返回内容为空", 502);
+    }
+
+    return {
+      response: resolveChatflowResponse(streamed.answer, {
+        streamQuestion: streamed.lastSeenQuestion,
+        streamDecision: streamed.lastSeenDecision ?? null,
+      }),
+      conversationId: streamed.conversationId,
+    };
+  }
+
+  const json = await postDify<DifyChatBlockingResponse>(getChatUrl(), {
+    ...body,
+    response_mode: "blocking",
+  });
+
+  if (!json.answer?.trim()) {
+    throw new DifyClientError("Chatflow 返回内容为空", 502);
+  }
+
+  params.onPartialAnswer?.(json.answer, json.answer);
+
+  return {
+    response: resolveChatflowResponse(json.answer),
+    conversationId: json.conversation_id,
+  };
+}
+
+async function runMockWithStream(params: {
+  history?: ChatHistoryItem[];
+  conversationId?: string;
+  onPartialAnswer?: DifyAnswerUpdateHandler;
+}): Promise<RunChatflowResult> {
+  const { partialAnswer, finalAnswer, response } = buildMockStreamAnswer(
+    params.history ?? []
+  );
+
+  if (partialAnswer) {
+    params.onPartialAnswer?.(partialAnswer, partialAnswer);
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    const accumulatedAnswer = partialAnswer + finalAnswer;
+    params.onPartialAnswer?.(accumulatedAnswer, finalAnswer);
+  } else {
+    params.onPartialAnswer?.(finalAnswer, finalAnswer);
+  }
+
+  return {
+    response,
+    conversationId: params.conversationId ?? "",
+  };
+}
+
+export async function runChatflow(params: {
+  sessionId: string;
+  browserUuid: string;
+  message: string;
+  conversationId?: string;
+  history?: ChatHistoryItem[];
+  signal?: AbortSignal;
 }): Promise<RunChatflowResult> {
   if (useMockMode()) {
     return {
@@ -200,7 +401,7 @@ export async function runChatflow(params: {
     inputs: {},
     query: params.message,
     response_mode: getResponseMode(),
-    user: getUserId(params.sessionId),
+    user: getUserId(params.browserUuid),
   };
 
   if (params.conversationId) {
@@ -208,14 +409,21 @@ export async function runChatflow(params: {
   }
 
   if (getResponseMode() === "streaming") {
-    const streamed = await postDifyStream(getChatUrl(), body);
+    const streamed = await postDifyStream(getChatUrl(), body, {
+      signal: params.signal,
+      sessionId: params.sessionId,
+      browserUuid: params.browserUuid,
+    });
 
     if (!streamed.answer.trim()) {
       throw new DifyClientError("Chatflow 返回内容为空", 502);
     }
 
     return {
-      response: parseChatAnswer(streamed.answer),
+      response: resolveChatflowResponse(streamed.answer, {
+        streamQuestion: streamed.lastSeenQuestion,
+        streamDecision: streamed.lastSeenDecision ?? null,
+      }),
       conversationId: streamed.conversationId,
     };
   }
@@ -230,13 +438,14 @@ export async function runChatflow(params: {
   }
 
   return {
-    response: parseChatAnswer(json.answer),
+    response: resolveChatflowResponse(json.answer),
     conversationId: json.conversation_id,
   };
 }
 
 export async function runWorkflow(params: {
   sessionId: string;
+  browserUuid: string;
   message: string;
   history?: ChatHistoryItem[];
   conversationId?: string;
@@ -255,7 +464,7 @@ export async function runWorkflow(params: {
       query: buildQuery(params.message, history),
     },
     response_mode: "blocking",
-    user: getUserId(params.sessionId),
+    user: getUserId(params.browserUuid),
   };
 
   const json = await postDify<DifyWorkflowBlockingResponse>(
@@ -275,9 +484,11 @@ export async function runWorkflow(params: {
 
 export async function runDify(params: {
   sessionId: string;
+  browserUuid: string;
   message: string;
   history?: ChatHistoryItem[];
   conversationId?: string;
+  signal?: AbortSignal;
 }): Promise<RunChatflowResult> {
   const mode = process.env.DIFY_APP_MODE ?? "chatflow";
 
