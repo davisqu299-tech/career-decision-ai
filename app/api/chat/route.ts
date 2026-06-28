@@ -279,6 +279,11 @@ export async function POST(request: Request) {
         }
       }
 
+      const existingDecisionComparison =
+        "decision_comparison" in response
+          ? response.decision_comparison
+          : undefined;
+
       if (
         lastSeenQuestion &&
         response.type !== "decision" &&
@@ -289,8 +294,8 @@ export async function POST(request: Request) {
           type: "follow_up",
           strategy_id: "default",
           question: lastSeenQuestion,
-          ...(response.decision_comparison
-            ? { decision_comparison: response.decision_comparison }
+          ...(existingDecisionComparison
+            ? { decision_comparison: existingDecisionComparison }
             : {}),
         };
       }

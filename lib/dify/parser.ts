@@ -609,9 +609,14 @@ export function resolveChatflowResponse(
       return recoveredDecision;
     }
 
+    const comparisonBeforeFollowUp =
+      "decision_comparison" in response
+        ? response.decision_comparison
+        : undefined;
+
     if (streamQuestion && response.type !== "report_generating") {
       const decisionComparison =
-        response.decision_comparison ??
+        comparisonBeforeFollowUp ??
         tryParseDecisionComparisonFromPartial(answer);
       return {
         type: "follow_up",
